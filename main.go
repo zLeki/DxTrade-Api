@@ -1183,7 +1183,6 @@ type TradeHistory struct {
 		Currency          string  `json:"currency"`
 		CurrencyPrecision int     `json:"currencyPrecision"`
 		Precision         int     `json:"precision"`
-		PipsSize          int     `json:"pipsSize"`
 		QuantityIncrement float64 `json:"quantityIncrement"`
 		QuantityPrecision int     `json:"quantityPrecision"`
 		PriceIncrement    float64 `json:"priceIncrement"`
