@@ -8,10 +8,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"io"
-	"strconv"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -277,6 +277,7 @@ func (i *Identity) Login() {
 	}
 	i.EstablishHandshake()
 }
+
 func (i *Identity) GetTransactions() Positions {
 	inc_msg := strings.Split(i.EstablishHandshake("POSITIONS"), "|")
 	if len(inc_msg) < 2 {
@@ -410,6 +411,59 @@ func (i *Identity) ClosePosition(PositionId string, Quantity float64, Price floa
 	}
 	defer res.Body.Close()
 	fmt.Println(res.Status)
+}
+
+type CloseStruct struct {
+	Legs []struct {
+		InstrumentId   int    `json:"instrumentId"`
+		PositionCode   string `json:"positionCode"`
+		PositionEffect string `json:"positionEffect"`
+		RatioQuantity  int    `json:"ratioQuantity"`
+		Symbol         string `json:"symbol"`
+	} `json:"legs"`
+	LimitPrice  float64 `json:"limitPrice"`
+	OrderType   string  `json:"orderType"`
+	Quantity    float64 `json:"quantity"`
+	TimeInForce string  `json:"timeInForce"`
+}
+
+func (i *Identity) PartialClose(InstrumentId int, PositionCode, Symbol string, Quantity float64) error {
+	//https://dxtrade.ftmo.com/api/positions/close
+	url := "https://dxtrade." + i.Server + ".com/api/positions/close"
+	method := "POST"
+	var payload CloseStruct
+	payload.Legs = make([]struct {
+		InstrumentId   int    `json:"instrumentId"`
+		PositionCode   string `json:"positionCode"`
+		PositionEffect string `json:"positionEffect"`
+		RatioQuantity  int    `json:"ratioQuantity"`
+		Symbol         string `json:"symbol"`
+	}, 1)
+	payload.Legs[0].InstrumentId = InstrumentId
+	payload.Legs[0].PositionCode = PositionCode
+	payload.Legs[0].PositionEffect = "CLOSING"
+	payload.Legs[0].RatioQuantity = 1
+	payload.Legs[0].Symbol = Symbol
+	payload.LimitPrice = 0
+	payload.OrderType = "MARKET"
+	payload.Quantity = Quantity // not auto
+	payload.TimeInForce = "GTC"
+	client := &http.Client{}
+	payloadJson, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(method, url, bytes.NewBuffer(payloadJson))
+	req.Header.Add("content-type", "application/json; charset=UTF-8")
+	req.Header.Add("cookie", "DXTFID="+i.Cookies["DXTFID"]+"; JSESSIONID="+i.Cookies["JSESSIONID"])
+	req.Header.Add("x-csrf-token", i.FetchCSRF())
+	req.Header.Add("x-requested-with", "XMLHttpRequest")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
 }
 func (i *Identity) ExecuteOrder(Method int, Quantity, Price, TakeProfit, StopLoss float64, symbol string, instrumentId int) {
 	var executePayload ExecutePayload
@@ -621,8 +675,8 @@ func getTodayTimestampMs() int64 {
 func (i *Identity) TradeHistory() []TradeHistory {
 	i.Login()
 	timestampMs := strconv.Itoa(int(getTodayTimestampMs()))
-	TdaysagoTimeStampMs := strconv.Itoa(int(getTodayTimestampMs() - 259200000))
-	url := "https://dxtrade." + i.Server + ".com/api/history?from="+TdaysagoTimeStampMs+"&to="+timestampMs+"&orderId="
+	TdaysagoTimeStampMs := strconv.Itoa(int(getTodayTimestampMs() - 1719776080873))
+	url := "https://dxtrade." + i.Server + ".com/api/history?from=" + TdaysagoTimeStampMs + "&to=" + timestampMs + "&orderId="
 	method := "POST"
 
 	client := &http.Client{}
@@ -905,14 +959,14 @@ func (i *Identity) GetCandleStickData(sym string) *CandleStickData {
 type PositionMetrix struct {
 	AccountId string `json:"accountId"`
 	Body      []struct {
-		Uid              string  `json:"uid"`
-		AccountId        string  `json:"accountId"`
-		Margin           float64 `json:"margin"`
-		PlOpen           float64 `json:"plOpen"`
-		PlClosed         int     `json:"plClosed"`
+		Uid              string      `json:"uid"`
+		AccountId        string      `json:"accountId"`
+		Margin           float64     `json:"margin"`
+		PlOpen           float64     `json:"plOpen"`
+		PlClosed         int         `json:"plClosed"`
 		TotalCommissions interface{} `json:"totalCommissions"`
 		TotalFinancing   interface{} `json:"totalFinancing"`
-		PlRate           float64 `json:"plRate"`
+		PlRate           float64     `json:"plRate"`
 	} `json:"body"`
 	Type string `json:"type"`
 }
@@ -1164,7 +1218,6 @@ type TradeHistory struct {
 	Type              string      `json:"type"`
 	TriggerPrice      string      `json:"triggerPrice"`
 	FillPrice         interface{} `json:"fillPrice"`
-	Price             string      `json:"price"`
 	AccountCode       string      `json:"accountCode"`
 	TakeProfitPrice   string      `json:"takeProfitPrice"`
 	ExpireAt          interface{} `json:"expireAt"`
